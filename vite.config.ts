@@ -1,14 +1,29 @@
-import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite'
+import { defineConfig, loadEnv, type HtmlTagDescriptor, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 
-import siteConfiguration from './.figma/make/site.json'
+import { safeApiBase } from './src/lib/security.ts'
+
+import pdfAssets from './scripts/pdfAssets.ts'
+
+import siteConfiguration from './.figma/make/site.json' with { type: 'json' }
 
 // Vite config — https://vitejs.dev/config/
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
+  const env = loadEnv(mode, process.cwd(), 'VITE_')
+  const development = command === 'serve' && !process.argv.includes('preview')
+  const api = safeApiBase(env.VITE_API_BASE_URL ?? '', development)
+  if (env.VITE_USE_MOCK_API === 'true') throw new Error('Mock authentication is disabled for this administration app.')
+  const script = development ? "'self' 'unsafe-inline'" : "'self'"
+  const connect = ["'self'", ...(api ? [new URL(api).origin] : []), ...(development ? ['ws://localhost:*', 'ws://127.0.0.1:*'] : [])].join(' ')
+  const csp = `default-src 'none'; script-src ${script}; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src ${connect}; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
+  const headers = { 'Content-Security-Policy': csp, 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer', 'Permissions-Policy': 'geolocation=(), camera=(), microphone=()', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' }
+  for (const content of Object.values((siteConfiguration as FigmaSiteConfiguration).customScripts ?? {})) {
+    if (content) throw new Error('Arbitrary custom scripts are disabled for the administration app.')
+  }
   // .figma/make/deploy-preview passes `--mode development` for cached-preview builds.
-  const emitSourcemaps = mode === 'development'
+  const emitSourcemaps = false
 
   return {
     base: process.env.FIGMA_PUBLIC_URL ? `${process.env.FIGMA_PUBLIC_URL}/` : '/',
@@ -17,26 +32,51 @@ export default defineConfig(({ mode }) => {
       minify: !emitSourcemaps,
     },
     plugins: [
+      {
+        name: 'admin-security-headers',
+        configureServer(server) {
+          server.middlewares.use((req, res, next) => {
+            let pathname = (req.url ?? '/').split('?')[0]
+            try { for (let i = 0; i < 3; i++) pathname = decodeURIComponent(pathname) } catch { res.statusCode = 400; res.end('Bad request'); return }
+            const protectedFile = /(?:^|\/)(?:\.env(?:\.[^/]*)?|\.git|\.figma|tmp|docs|scripts|AGENTS\.md|CLAUDE\.md|package(?:-lock)?\.json|pnpm-lock\.yaml)(?:\/|$)/i.test(pathname)
+            const fsTarget = pathname.startsWith('/@fs/') ? path.resolve(pathname.slice(5)) : null
+            const outsideRoot = fsTarget !== null && fsTarget !== process.cwd() && !fsTarget.startsWith(process.cwd() + path.sep)
+            if (pathname.startsWith('/__open-in-editor') || protectedFile || outsideRoot || pathname.includes('\\') || /[\u0000-\u001f\u007f]/.test(pathname)) {
+              res.statusCode = 403; res.setHeader('Content-Type', 'text/plain'); res.end('Forbidden'); return
+            }
+            next()
+          })
+        },
+        transformIndexHtml: {
+          order: 'post',
+          handler: () => development ? [] : [{ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: csp.replace("; frame-ancestors 'none'", '') }, injectTo: 'head-prepend' }],
+        },
+      },
+      pdfAssets(),
       react(),
       tailwindcss(),
       figmaSiteConfiguration(siteConfiguration),
-      figmaErrorOverlayReplay(),
-      figmaReactRefreshBoundaryFallback(),
-      figmaMakeKitPlugin({ storiesGlob: '/src/**/*.stories.{ts,tsx,js,jsx}' }),
+      ...(development && process.env.FIGMA_DEV_TOOLS === 'true' ? [figmaErrorOverlayReplay(), figmaReactRefreshBoundaryFallback(), figmaMakeKitPlugin({ storiesGlob: '/src/**/*.stories.{ts,tsx,js,jsx}' })] : []),
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'),
+        '@': path.resolve(import.meta.dirname, './src'),
       },
     },
     server: {
-      host: '0.0.0.0',
+      host: '127.0.0.1',
       port: parseInt(process.env.PORT || '8443'),
       strictPort: true,
-      watch: { ignored: ['**/.figma/**'] },
+      headers,
+      cors: false,
+      hmr: { overlay: false },
+      fs: { strict: true, allow: [process.cwd()], deny: ['.env', '.env.*', '*.{crt,pem,key}', '**/.git/**', '**/.figma/**', '**/tmp/**', '**/docs/**', '**/scripts/**', '**/*.private.json', '**/*.{db,sqlite,sqlite3}', '**/package*.json', '**/pnpm-lock.yaml', '**/AGENTS.md', '**/CLAUDE.md'] },
+      watch: { ignored: ['**/.figma/**', '**/tmp/**', '**/docs/**'] },
     },
     preview: {
-      host: '0.0.0.0',
+      headers,
+      strictPort: true,
+      host: '127.0.0.1',
       port: parseInt(process.env.PORT || '8443'),
     },
   }

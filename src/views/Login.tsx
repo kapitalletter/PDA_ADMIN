@@ -2,7 +2,7 @@ import { useState } from "react";
 import { signIn, type SignInResponse } from "../lib/auth";
 import { Button, Field, inputCls } from "../lib/ui";
 
-export default function Login({ onLogin }: { onLogin: (session: SignInResponse) => void }) {
+export default function Login({ onLogin, message, disabled = false }: { onLogin: (session: SignInResponse) => void; message?: string; disabled?: boolean }) {
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -10,11 +10,13 @@ export default function Login({ onLogin }: { onLogin: (session: SignInResponse) 
 
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isSubmitting || disabled) return;
     setError("");
     setIsSubmitting(true);
 
     try {
       const session = await signIn(loginId, password);
+      setPassword("");
       onLogin(session);
     } catch (err) {
       setError(err instanceof Error ? err.message : "로그인에 실패했습니다.");
@@ -52,16 +54,17 @@ export default function Login({ onLogin }: { onLogin: (session: SignInResponse) 
 
           <div className="space-y-4">
             <Field label="이메일">
-              <input type="email" className={`${inputCls} py-3 text-[16px]`} placeholder="admin@hospice.kr" value={loginId} onChange={(e) => setLoginId(e.target.value)} autoComplete="username" required />
+              <input type="email" maxLength={100} className={`${inputCls} py-3 text-[16px]`} placeholder="admin@hospice.kr" value={loginId} onChange={(e) => setLoginId(e.target.value)} autoComplete="username" required />
             </Field>
             <Field label="비밀번호">
-              <input type="password" className={`${inputCls} py-3 text-[16px]`} placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
+              <input type="password" minLength={8} maxLength={64} className={`${inputCls} py-3 text-[16px]`} placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
             </Field>
           </div>
 
+          {message && <p role="status" className="mt-4 text-[13px] text-[#64748B]">{message}</p>}
           {error && <p className="mt-4 text-[13px] text-[#BE123C]">{error}</p>}
 
-          <Button type="submit" className="mt-7 w-full py-3.5 text-[16px]" disabled={isSubmitting}>
+          <Button type="submit" className="mt-7 w-full py-3.5 text-[16px]" disabled={isSubmitting || disabled}>
             {isSubmitting ? "로그인 중..." : "로그인"}
           </Button>
         </form>

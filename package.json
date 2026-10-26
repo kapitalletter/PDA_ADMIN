@@ -4,12 +4,15 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
+    "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview",
-    "format": "oxfmt"
+    "format": "oxfmt",
+    "typecheck": "tsc --noEmit",
+    "test:security": "node --test scripts/security.test.mjs"
   },
   "dependencies": {
+    "pdfjs-dist": "5.4.624",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

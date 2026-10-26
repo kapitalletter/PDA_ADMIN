@@ -31,6 +31,8 @@ export default function OwnerAccounts() {
   }, [page, pageSize, query]);
 
   const toggleStatus = async (row: PalliativeAccount) => {
+    if (saving) return;
+    setSaving(true);
     const status = row.status === "active" ? "inactive" : "active";
     setError("");
     try {
@@ -38,24 +40,24 @@ export default function OwnerAccounts() {
       setRows((rs) => rs.map((r) => (r.id === row.id ? updated : r)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "상태를 변경하지 못했습니다.");
-    }
+    } finally { setSaving(false); }
   };
 
   const update = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!editing) return;
+    if (!editing || saving) return;
     const form = new FormData(event.currentTarget);
-    const initialPassword = String(form.get("initialPassword") || "").trim();
+    const initialPassword = String(form.get("initialPassword") || "");
     const hospitalCode = String(form.get("hospitalCode") || "").trim();
     setSaving(true);
     setError("");
     try {
       const updated = await updateStaffAccount(editing.id, {
-        hospitalCode: hospitalCode || null,
-        institutionName: String(form.get("institutionName") || "").trim() || null,
-        name: String(form.get("name") || "").trim() || null,
-        contactPhone: String(form.get("contactPhone") || "").trim() || null,
-        loginId: String(form.get("loginId") || "").trim() || null,
+        hospitalCode: hospitalCode || undefined,
+        institutionName: String(form.get("institutionName") || "").trim() || undefined,
+        name: String(form.get("name") || "").trim() || undefined,
+        contactPhone: String(form.get("contactPhone") || "").trim() || undefined,
+        loginId: String(form.get("loginId") || "").trim() || undefined,
         isActive: form.get("isActive") === "on",
         ...(initialPassword ? { initialPassword } : {}),
       });
@@ -69,6 +71,7 @@ export default function OwnerAccounts() {
   };
 
   const remove = async (row: PalliativeAccount) => {
+    if (saving) return;
     setError("");
     setSaving(true);
     try {
@@ -85,6 +88,7 @@ export default function OwnerAccounts() {
 
   const create = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (saving) return;
     const f = new FormData(e.currentTarget);
     const institutionName = String(f.get("institutionName") || "").trim();
     if (!institutionName) return;
@@ -143,7 +147,7 @@ export default function OwnerAccounts() {
       </header>
 
       <form onSubmit={search} className="flex justify-end gap-2">
-        <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder="기관, 담당자, 연락처 검색" className={`${inputCls} h-11 w-full max-w-[450px]`} />
+        <input maxLength={60} value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder="기관, 담당자, 연락처 검색" className={`${inputCls} h-11 w-full max-w-[450px]`} />
         <Button type="submit" variant="outline" className="h-11 min-w-16 px-4">
           검색
         </Button>
@@ -180,7 +184,7 @@ export default function OwnerAccounts() {
                       <Button variant="ghost" className="px-2 py-1 text-[12px]" onClick={() => setEditing(r)}>
                         수정
                       </Button>
-                      <Button variant="ghost" className="px-2 py-1 text-[12px]" onClick={() => toggleStatus(r)}>
+                      <Button variant="ghost" className="px-2 py-1 text-[12px]" disabled={saving} onClick={() => toggleStatus(r)}>
                         {r.status === "active" ? "정지" : "활성화"}
                       </Button>
                       <Button variant="danger" className="px-2 py-1 text-[12px]" onClick={() => setDeleting(r)}>
@@ -226,22 +230,22 @@ export default function OwnerAccounts() {
               <input name="hospitalCode" className={inputCls} placeholder="예) 01" inputMode="numeric" pattern="[0-9]{2}" maxLength={2} autoFocus required />
             </Field>
             <Field label="완화의료 기관명">
-              <input name="institutionName" className={inputCls} placeholder="예) 00 병원" required />
+              <input maxLength={60} name="institutionName" className={inputCls} placeholder="예) 00 병원" required />
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="담당자명">
-              <input name="name" className={inputCls} placeholder="예) 김서연" required />
+              <input maxLength={60} name="name" className={inputCls} placeholder="예) 김서연" required />
             </Field>
             <Field label="연락처">
-              <input name="contactPhone" className={inputCls} placeholder="예) 02-0000-0000" required />
+              <input maxLength={11} minLength={9} inputMode="numeric" pattern="[0-9]{9,11}" name="contactPhone" className={inputCls} placeholder="예) 0200000000" required />
             </Field>
           </div>
           <Field label="로그인 ID (이메일)">
-            <input name="loginId" type="email" className={inputCls} placeholder="예) manager@hospice.kr" required />
+            <input maxLength={60} name="loginId" type="email" className={inputCls} placeholder="예) manager@hospice.kr" required />
           </Field>
-          <Field label="임시 비밀번호" hint="12자 이상으로 설정, 완화의료 담당자는 최초 로그인 후 비밀번호를 변경합니다.">
-            <input name="initialPassword" type="password" className={inputCls} minLength={12} maxLength={128} autoComplete="new-password" required />
+          <Field label="임시 비밀번호" hint="8~64자 조합 규칙에 맞게 설정, 완화의료 담당자는 최초 로그인 후 비밀번호를 변경합니다.">
+            <input name="initialPassword" type="password" className={inputCls} minLength={8} maxLength={64} autoComplete="new-password" required />
           </Field>
           <div className="mt-2 flex justify-end gap-2 border-t border-[#F1F5F9] pt-4">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
@@ -285,7 +289,7 @@ export default function OwnerAccounts() {
         {editing && (
           <form key={editing.id} onSubmit={update} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
-              <Field label="의료기관 코드" hint="숫자 두 자리 (비우면 코드 해제)">
+              <Field label="의료기관 코드" hint="숫자 두 자리 (비우면 기존 값 유지)">
                 <input name="hospitalCode" className={inputCls} defaultValue={editing.hospitalCode ?? ""} inputMode="numeric" pattern="[0-9]{2}" placeholder="예) 01" />
               </Field>
               <Field label="계정 상태">
@@ -296,21 +300,21 @@ export default function OwnerAccounts() {
               </Field>
             </div>
             <Field label="완화의료 기관명">
-              <input name="institutionName" className={inputCls} defaultValue={editing.org} required />
+              <input maxLength={60} name="institutionName" className={inputCls} defaultValue={editing.org} required />
             </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label="담당자명">
-                <input name="name" className={inputCls} defaultValue={editing.manager} required />
+                <input maxLength={60} name="name" className={inputCls} defaultValue={editing.manager} required />
               </Field>
               <Field label="연락처">
-                <input name="contactPhone" className={inputCls} defaultValue={editing.contact} placeholder="02-0000-0000" required />
+                <input maxLength={11} minLength={9} inputMode="numeric" pattern="[0-9]{9,11}" name="contactPhone" className={inputCls} defaultValue={editing.contact} placeholder="0200000000" required />
               </Field>
             </div>
             <Field label="로그인 ID (이메일)">
-              <input name="loginId" type="email" className={inputCls} defaultValue={editing.loginId ?? ""} required />
+              <input maxLength={60} name="loginId" type="email" className={inputCls} defaultValue={editing.loginId ?? ""} required />
             </Field>
-            <Field label="임시 비밀번호" hint="변경이 필요할 때만 입력하세요. 12~128자">
-              <input name="initialPassword" type="password" className={inputCls} minLength={12} maxLength={128} autoComplete="new-password" />
+            <Field label="임시 비밀번호" hint="변경이 필요할 때만 입력하세요. 8~64자">
+              <input name="initialPassword" type="password" className={inputCls} minLength={8} maxLength={64} autoComplete="new-password" />
             </Field>
             <div className="mt-2 flex justify-end gap-2 border-t border-[#F1F5F9] pt-4">
               <Button type="button" variant="outline" onClick={() => setEditing(null)}>

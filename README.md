@@ -22,14 +22,14 @@
 
 ## 실행 및 환경 설정
 
-`.env.example`을 참고해 로컬 `.env`를 만듭니다.
+로컬 `.env`에 아래 공개 API 환경변수를 설정합니다. API 주소가 비어 있으면 같은 origin의 reverse proxy를 사용합니다. 운영 빌드는 HTTPS API만 허용하며, HTTP는 Vite 개발 모드에서만 허용합니다.
 
 ```env
 VITE_API_BASE_URL=https://api.example.com
 VITE_USE_MOCK_API=false
 ```
 
-- `VITE_USE_MOCK_API=true`: 로그인과 관리자 데이터 모두 로컬 mock 사용. `admin`으로 시작하는 이메일은 `ADMIN`, 그 외 이메일은 `STAFF`로 로그인합니다(비밀번호는 임의 값).
+- `VITE_USE_MOCK_API=true`: 보안 개선 후 사용이 금지됩니다. 개발·운영 모두 실제 인증 API를 사용합니다.
 - `VITE_USE_MOCK_API=false`: 모든 관리자 데이터를 실제 API로 요청
 - 환경변수는 브라우저 번들에 포함되므로 비밀키를 넣지 않습니다.
 
@@ -42,7 +42,7 @@ VITE_USE_MOCK_API=false
 | 로그인                |   POST | `/manage/sign-in`                                     | `{ loginId, password }` → `accessToken`, `tokenType?`, `expiresIn`, `role: ADMIN \| STAFF`, `hospitalId`, `mustChangePassword` |
 | 비밀번호 변경         |    PUT | `/manage/password`                                    | `{ currentPassword, newPassword }`                                                                                             |
 | 기관 목록             |    GET | `/admin/staff?page=1&page_size=20&search=`            | `STAFF` 계정만 반환하는 `{ total, page, pageSize, items }`                                                                     |
-| 기관 생성             |   POST | `/admin/staff`                                        | 기관 코드·기관명·담당자·연락처·로그인 이메일·12~128자 임시 비밀번호                                                            |
+| 기관 생성             |   POST | `/admin/staff`                                        | 기관 코드·기관명·담당자·연락처·로그인 이메일·8~64자 조합 정책을 만족하는 임시 비밀번호                                                            |
 | 기관 수정/상태 변경   |  PATCH | `/admin/staff/{staff_id}`                             | 기관 코드·기관명·담당자·연락처·이메일·활성 상태·선택적 임시 비밀번호                                                           |
 | 기관 삭제             | DELETE | `/admin/staff/{staff_id}`                             | 업무 이력이 없는 계정만 삭제, `{ message }` 반환                                                                               |
 | 고유번호 할당 현황    |    GET | `/admin/codes`                                        | 전체 `total`과 기관별 `institutions`의 할당·생성·사용·잔여 수량                                                                |
@@ -63,11 +63,17 @@ VITE_USE_MOCK_API=false
 
 ## 인증 처리
 
-- 액세스 토큰은 현재 `sessionStorage`에 보관하며 모든 보호 API에 `Authorization: Bearer <token>`을 붙입니다.
-- `expiresIn`을 로그인 시각 기준 `expiresAt`으로 변환해 새로고침 후에도 세션을 복원합니다.
+- 액세스 토큰은 메모리에만 보관하고 보호 API에 `Authorization: Bearer <token>`을 붙입니다. 브라우저 저장소와 쿠키로 세션을 복원하지 않으므로 새로고침하면 재로그인합니다.
+- 서버 `expiresIn`과 프론트 최대 60분·유휴 15분 정책을 적용합니다. 로그인과 비밀번호 변경 뒤 `/manage/me`로 역할·기관·변경 필요 상태를 확인합니다. 비밀번호 변경 시 반환된 새 토큰으로 교체합니다.
 - 보호 API에서 401이 오면 세션을 지우고 로그인 화면으로 이동합니다.
 - `mustChangePassword=true`이면 다른 관리자 메뉴보다 비밀번호 변경을 먼저 요구합니다.
-- 새 비밀번호는 프론트에서 최소 8자만 검사합니다. 실제 정책은 반드시 백엔드에서도 검증해야 합니다.
+- 새 비밀번호는 서버와 동일한 8~64자·문자 종류·상용/반복 비밀번호 금지 정책을 검사하며, 서버가 최종 검증합니다.
+- 로그아웃은 관리자 토큰도 지원하는 `POST /auth/sign-out`으로 서버 tokenVersion을 폐기한 뒤 브라우저 세션을 지웁니다. 같은 계정의 기존 토큰들이 함께 무효화됩니다.
+- 점검표·상세 결과·운영 전달 사항은 저장소 밖 `D:/projects/PAD_ADMIN-security-final-2026-10-26`에 보관했습니다. 아래 TODO는 초기 연동 기록이며 최신 판단은 별도 점검 결과를 참고하세요.
+
+## PDF 결과지 보안 표시
+
+인증 API에서 받은 PDF 바이트를 동일 출처 PDF.js worker로 캔버스에 표시합니다. JS 평가·XFA·WASM을 비활성화하고, 최대 20 MiB·100페이지·전체 캔버스 800만 픽셀·30초를 제한합니다. 폰트와 CMap은 번들에 포함해 외부 CDN으로 환자 데이터를 보내지 않습니다. 다운로드 blob URL과 렌더러는 닫기/로그아웃 때 정리합니다. 운영 정적 서버에도 worker-src self, frame-src none, object-src none 등 CSP를 적용해야 합니다.
 
 ## TODO — 백엔드 담당자와 함께 해야 할 작업
 

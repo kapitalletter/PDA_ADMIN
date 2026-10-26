@@ -4,7 +4,9 @@ import OwnerQuota from "./views/OwnerQuota";
 import AdminDoctors from "./views/AdminDoctors";
 import AdminResponses from "./views/AdminResponses";
 import Login from "./views/Login";
-import { clearSession, restoreSession, saveSession, type ApiRole, type SignInResponse } from "./lib/auth";
+import { clearSession, restoreSession, signOut, type ApiRole, type SignInResponse } from "./lib/auth";
+import { cancelRequests } from "./lib/apiClient";
+import { touchSession } from "./lib/session";
 import ChangePassword from "./views/ChangePassword";
 
 type Role = "owner" | "admin";
@@ -48,7 +50,7 @@ const roleConfig: Record<Role, { brand: string; badge: string; org: string; nav:
   admin: {
     brand: "완화의료 관리",
     badge: "완화의료",
-    org: "세브란스 어린이 병원",
+    org: "소속 의료기관 관리",
     nav: [
       { key: "doctors", label: "의사 관리 & 고유번호 발급", icon: <Icon>{icons.doctor}</Icon>, view: <AdminDoctors /> },
       { key: "responses", label: "통합 응답 결과 게시판", icon: <Icon>{icons.board}</Icon>, view: <AdminResponses /> },
@@ -57,31 +59,60 @@ const roleConfig: Record<Role, { brand: string; badge: string; org: string; nav:
 };
 
 export default function App() {
-  const restored = restoreSession();
+  const [restored] = useState(restoreSession);
   const [role, setRole] = useState<Role | null>(() => (restored ? toUiRole(restored.role) : null));
   const [mustChangePassword, setMustChangePassword] = useState(() => restored?.mustChangePassword ?? false);
+  const [logoutMessage, setLogoutMessage] = useState("");
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [sessionKey, setSessionKey] = useState(0);
   const [active, setActive] = useState(0);
   const [collapsed, setCollapsed] = useState(false);
 
   const login = (session: SignInResponse) => {
-    saveSession(session);
+    setLogoutMessage("");
+    setSessionKey((key) => key + 1);
     setRole(toUiRole(session.role));
     setMustChangePassword(session.mustChangePassword);
     setActive(0);
   };
 
-  const logout = () => {
+  const clearUi = () => {
+    cancelRequests();
     clearSession();
     setRole(null);
     setMustChangePassword(false);
   };
 
+  const logout = async () => {
+    setLoggingOut(true);
+    const request = signOut();
+    setRole(null);
+    setMustChangePassword(false);
+    const revoked = await request;
+    setLogoutMessage(revoked ? "로그아웃되었습니다." : "브라우저에서 로그아웃했습니다. 서버 세션 폐기를 확인하지 못했습니다. 관리자에게 문의해주세요.");
+    setLoggingOut(false);
+  };
   useEffect(() => {
-    window.addEventListener("pda:unauthorized", logout);
-    return () => window.removeEventListener("pda:unauthorized", logout);
+    const expired = () => { clearUi(); setLogoutMessage("세션이 만료되었습니다. 다시 로그인해주세요."); };
+    const activity = (event: Event) => { if (event.isTrusted) touchSession(); };
+    const check = () => { restoreSession(); };
+    const timer = window.setInterval(check, 5000);
+    window.addEventListener("pda:unauthorized", expired);
+    window.addEventListener("pointerdown", activity);
+    window.addEventListener("keydown", activity);
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("pda:unauthorized", expired);
+      window.removeEventListener("pointerdown", activity);
+      window.removeEventListener("keydown", activity);
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", check);
+    };
   }, []);
 
-  if (!role) return <Login onLogin={login} />;
+  if (!role) return <Login onLogin={login} message={logoutMessage} disabled={loggingOut} />;
   if (mustChangePassword) return <ChangePassword onComplete={() => setMustChangePassword(false)} onLogout={logout} />;
 
   const cfg = roleConfig[role];
@@ -137,7 +168,7 @@ export default function App() {
         </header>
 
         <main className="flex-1 overflow-y-auto p-6 lg:p-8">
-          <div className="mx-auto max-w-[1200px]">{current.view}</div>
+          <div className="mx-auto max-w-[1200px]"><div key={sessionKey}>{current.view}</div></div>
         </main>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createDoctor, downloadSignupQr, downloadUnusedCodes, getDoctorDetail, issueCodes, listDoctors, updateDoctor, type CodeBatchResult, type ProviderDetail } from "../lib/adminApi";
+import { positiveInteger } from "../lib/security";
 import type { Doctor } from "../lib/data";
 import { Badge, Button, Card, Field, Modal, Table, Td, Th, inputCls } from "../lib/ui";
 
@@ -45,6 +46,7 @@ export default function AdminDoctors() {
 
   const addDoctor = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (saving) return;
     const f = new FormData(e.currentTarget);
     const name = String(f.get("name") || "").trim();
     if (!name) return;
@@ -67,6 +69,7 @@ export default function AdminDoctors() {
 
   const editDoctor = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (saving) return;
     if (!editingDoctor) return;
     const form = new FormData(e.currentTarget);
     const name = String(form.get("name") || "").trim();
@@ -105,8 +108,9 @@ export default function AdminDoctors() {
   };
 
   const issueBatch = async (doctorId: string) => {
-    const n = parseInt(issueQty[doctorId] || "", 10);
-    if (!Number.isFinite(n) || n <= 0) return;
+    const n = Number(issueQty[doctorId] || "");
+    if (saving) return;
+    try { positiveInteger(issueQty[doctorId] || "", 100); } catch (err) { setError((err as Error).message); return; }
     const providerId = Number(doctorId);
     if (!Number.isInteger(providerId)) {
       setError("의사 ID 형식이 올바르지 않습니다.");
@@ -144,7 +148,7 @@ export default function AdminDoctors() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "미사용 고유번호 Excel을 다운로드하지 못했습니다.");
     } finally {
@@ -164,7 +168,7 @@ export default function AdminDoctors() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "회원가입 QR 이미지를 다운로드하지 못했습니다.");
     } finally {
@@ -186,6 +190,7 @@ export default function AdminDoctors() {
           <Button onClick={() => setOpen(true)}>+ 의사 등록</Button>
         </div>
       </header>
+      {error && <p role="alert" className="rounded-lg bg-[#FFF1F2] p-3 text-[13px] text-[#BE123C]">{error}</p>}
 
       <div className="flex flex-wrap items-center gap-7 rounded-2xl border border-[#93C5FD] bg-[#EAF3FF] px-6 py-5">
         <div className="min-w-[210px]">
@@ -240,7 +245,7 @@ export default function AdminDoctors() {
                   </Td>
                   <Td className="px-3 py-3">
                     <div className="flex items-center gap-1.5">
-                      <input type="number" min={1} value={issueQty[r.id] ?? ""} onChange={(event) => setIssueQty((quantities) => ({ ...quantities, [r.id]: event.target.value }))} className="h-9 w-[68px] rounded-xl border border-[#CBD5E1] px-2 text-center text-[13px] outline-none focus:border-[#2563EB]" placeholder="수량" />
+                      <input type="number" min={1} max={100} value={issueQty[r.id] ?? ""} onChange={(event) => setIssueQty((quantities) => ({ ...quantities, [r.id]: event.target.value }))} className="h-9 w-[68px] rounded-xl border border-[#CBD5E1] px-2 text-center text-[13px] outline-none focus:border-[#2563EB]" placeholder="수량" />
                       <Button className="px-3 py-2 text-[12px]" onClick={() => void issueBatch(r.id)} disabled={saving}>
                         일괄 발급
                       </Button>
@@ -284,14 +289,14 @@ export default function AdminDoctors() {
         <form onSubmit={addDoctor} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <Field label="의사 성명">
-              <input name="name" className={inputCls} placeholder="예) 윤재호 교수" autoFocus />
+              <input maxLength={60} name="name" className={inputCls} placeholder="예) 윤재호 교수" required autoFocus />
             </Field>
             <Field label="진료과">
-              <input name="department" className={inputCls} placeholder="예) 혈액종양내과" />
+              <input maxLength={60} name="department" className={inputCls} placeholder="예) 혈액종양내과" required />
             </Field>
           </div>
           <Field label="수신 이메일" hint="환자 요약 양식이 이 주소로 자동 발송됩니다.">
-            <input name="email" type="email" className={inputCls} placeholder="예) doctor@hospice.kr" />
+            <input maxLength={60} name="email" type="email" className={inputCls} placeholder="예) doctor@hospice.kr" required />
           </Field>
           <div className="mt-2 flex justify-end gap-2 border-t border-[#F1F5F9] pt-4">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
@@ -309,14 +314,14 @@ export default function AdminDoctors() {
           <form onSubmit={editDoctor} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <Field label="의사 성명">
-                <input name="name" className={inputCls} defaultValue={editingDoctor.name} required autoFocus />
+                <input maxLength={60} name="name" className={inputCls} defaultValue={editingDoctor.name} required autoFocus />
               </Field>
               <Field label="진료과">
-                <input name="department" className={inputCls} defaultValue={editingDoctor.department === "—" ? "" : editingDoctor.department} placeholder="예) 혈액종양내과" />
+                <input maxLength={60} name="department" className={inputCls} defaultValue={editingDoctor.department === "—" ? "" : editingDoctor.department} placeholder="예) 혈액종양내과" required />
               </Field>
             </div>
             <Field label="수신 이메일">
-              <input name="email" type="email" className={inputCls} defaultValue={editingDoctor.email} required />
+              <input maxLength={60} name="email" type="email" className={inputCls} defaultValue={editingDoctor.email} required />
             </Field>
             <Field label="사용 상태">
               <select name="isActive" className={inputCls} defaultValue={editingDoctor.status === "active" ? "true" : "false"}>
@@ -387,9 +392,9 @@ export default function AdminDoctors() {
               </div>
             </dl>
             <div className="flex justify-end gap-2">
-              <a href={batchResult.excelUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-[14px] font-semibold text-[#0F172A] hover:bg-[#F8FAFC]">
+              <button type="button" disabled={saving} onClick={() => void downloadUnusedExcel(String(batchResult.providerId))} className="inline-flex items-center justify-center rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-[14px] font-semibold text-[#0F172A] hover:bg-[#F8FAFC]">
                 미사용 PIN Excel
-              </a>
+              </button>
               <Button onClick={() => setBatchResult(null)}>확인</Button>
             </div>
           </div>

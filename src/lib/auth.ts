@@ -1,87 +1,51 @@
-import { ApiError, apiRequest, isMockApi } from "./apiClient"
+import { apiRequest, cancelRequests, isMockApi } from "./apiClient"
+import { boundedText, passwordPolicy } from "./security"
+import { clearSession, requireSession, saveSession, validateSession, type SignInResponse } from "./session"
+export { clearSession, restoreSession, saveSession } from "./session"
+export type { ApiRole, SignInResponse } from "./session"
 
-/** `POST /manage/sign-in` 명세의 역할 값 */
-export type ApiRole = "ADMIN" | "STAFF"
-
-export interface SignInResponse {
-  accessToken: string
-  tokenType?: string
-  expiresIn: number
-  role: ApiRole
-  hospitalId: number | null
-  mustChangePassword: boolean
+type StaffMe = Pick<SignInResponse, "role" | "hospitalId" | "mustChangePassword">
+async function verifyIdentity(session: SignInResponse) {
+  const me = await apiRequest<StaffMe>("/manage/me")
+  if (!me || me.role !== session.role || me.hospitalId !== session.hospitalId || me.mustChangePassword !== session.mustChangePassword) {
+    throw new Error("계정 권한 정보를 확인할 수 없습니다. 다시 로그인해주세요.")
+  }
 }
-
 export async function signIn(loginId: string, password: string): Promise<SignInResponse> {
-  if (isMockApi()) {
-    await new Promise((resolve) => setTimeout(resolve, 200))
-    return {
-      accessToken: "mock-access-token",
-      tokenType: "Bearer",
-      expiresIn: 3600,
-      role: loginId.toLowerCase().startsWith("admin") ? "ADMIN" : "STAFF",
-      hospitalId: loginId.toLowerCase().startsWith("system") ? null : 1,
-      mustChangePassword: false,
-    }
-  }
-  try {
-    return await apiRequest<SignInResponse>("/manage/sign-in", {
-      method: "POST",
-      auth: false,
-      body: { loginId, password },
-    })
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 422) {
-      throw new Error("이메일 또는 비밀번호를 다시 확인해주세요.")
-    }
-    throw error
-  }
+  clearSession()
+  cancelRequests()
+  if (isMockApi()) throw new Error("관리자 인증에는 실제 API가 필요합니다.")
+  boundedText(loginId, 100)
+  if ([...password].length < 8 || [...password].length > 64 || /[\u0000-\u001f\u007f]/.test(password)) throw new Error("비밀번호는 8~64자로 입력해주세요.")
+  const result = validateSession(await apiRequest<SignInResponse>("/manage/sign-in", { method: "POST", auth: false, body: { loginId: loginId.trim(), password } }))
+  saveSession(result)
+  try { await verifyIdentity(result); return result } catch (error) { clearSession(); throw error }
 }
-
 export async function changePassword(currentPassword: string, newPassword: string) {
-  if (isMockApi()) return
-  await apiRequest<void>("/manage/password", {
-    method: "PUT",
-    body: { currentPassword, newPassword },
-  })
-}
-
-export function saveSession(session: SignInResponse) {
-  const tokenType = session.tokenType
-    ? session.tokenType.charAt(0).toUpperCase() + session.tokenType.slice(1).toLowerCase()
-    : "Bearer"
-  const expiresAt = Date.now() + session.expiresIn * 1000
-
-  sessionStorage.setItem("accessToken", session.accessToken)
-  sessionStorage.setItem("tokenType", tokenType)
-  sessionStorage.setItem("expiresAt", String(expiresAt))
-  sessionStorage.setItem("role", session.role)
-  sessionStorage.setItem("hospitalId", session.hospitalId === null ? "" : String(session.hospitalId))
-  sessionStorage.setItem("mustChangePassword", String(session.mustChangePassword))
-}
-
-export function clearSession() {
-  for (const key of ["accessToken", "tokenType", "expiresAt", "role", "hospitalId", "mustChangePassword"]) {
-    sessionStorage.removeItem(key)
+  const current = requireSession()
+  passwordPolicy(newPassword)
+  if (newPassword === currentPassword) throw new Error("현재와 다른 새 비밀번호를 입력해주세요.")
+  const response = await apiRequest<SignInResponse>("/manage/password", { method: "PUT", body: { currentPassword, newPassword } })
+  let result: SignInResponse
+  try { result = validateSession(response) } catch (error) {
+    clearSession(); window.dispatchEvent(new Event("pda:unauthorized")); throw error
   }
-}
-
-export function restoreSession(): SignInResponse | null {
-  const accessToken = sessionStorage.getItem("accessToken")
-  const role = sessionStorage.getItem("role") as ApiRole | null
-  const expiresAt = Number(sessionStorage.getItem("expiresAt"))
-  if (!accessToken || !role || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+  if (result.accessToken === current.accessToken || result.mustChangePassword || result.role !== current.role || result.hospitalId !== current.hospitalId) {
     clearSession()
-    return null
+    window.dispatchEvent(new Event("pda:unauthorized"))
+    throw new Error("새 로그인 세션을 확인할 수 없습니다. 다시 로그인해주세요.")
   }
-
-  const hospitalId = sessionStorage.getItem("hospitalId")
-  return {
-    accessToken,
-    tokenType: sessionStorage.getItem("tokenType") ?? "Bearer",
-    expiresIn: Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)),
-    role,
-    hospitalId: hospitalId ? Number(hospitalId) : null,
-    mustChangePassword: sessionStorage.getItem("mustChangePassword") === "true",
+  cancelRequests()
+  saveSession(result)
+  try { await verifyIdentity(result) } catch (error) {
+    clearSession(); window.dispatchEvent(new Event("pda:unauthorized")); throw error
   }
+}
+export async function signOut(): Promise<boolean> {
+  cancelRequests()
+  try {
+    // The shared backend endpoint revokes USER and STAFF tokens by token version.
+    await apiRequest("/auth/sign-out", { method: "POST" })
+    return true
+  } catch { return false } finally { clearSession(); cancelRequests() }
 }

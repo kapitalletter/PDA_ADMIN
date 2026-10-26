@@ -57,9 +57,10 @@ export default function OwnerQuota() {
 
   const grantQuota = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (saving) return
     const staffId = Number(targetStaffId)
     const amount = Number(count)
-    if (!Number.isInteger(staffId) || !Number.isInteger(amount) || amount < 1) return
+    if (!Number.isInteger(staffId) || !Number.isInteger(amount) || amount < 1 || amount > 100_000) return
 
     setSaving(true)
     setError("")
@@ -113,7 +114,7 @@ export default function OwnerQuota() {
               </select>
             </Field>
             <Field label="추가 부여 수량" hint="현재 누적 할당 한도에 더해집니다.">
-              <input type="number" min={1} step={1} value={count} onChange={(event) => setCount(event.target.value)} className={inputCls} placeholder="예) 50" required />
+              <input type="number" min={1} max={100000} step={1} value={count} onChange={(event) => setCount(event.target.value)} className={inputCls} placeholder="예) 50" required />
             </Field>
             <Button type="submit" className="w-full" disabled={saving || loading || rows.length === 0}>{saving ? "처리 중..." : "한도 부여"}</Button>
           </form>

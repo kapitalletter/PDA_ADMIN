@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getPdaResultPdf, listStaffResults, type ResultBoardItem, type ResultBoardStats, type ResultCategory } from "../lib/adminApi";
 import { Button, Card, Modal, Table, Td, Th } from "../lib/ui";
 
+import PdfPreview from "../components/PdfPreview";
+
 const filters: { key: ResultCategory; label: string }[] = [
   { key: "ALL", label: "전체" },
   { key: "COMPLETED", label: "응답완료" },
@@ -25,6 +27,7 @@ export default function AdminResponses() {
   const [refreshing, setRefreshing] = useState(false);
   const [openingRecordId, setOpeningRecordId] = useState<number | null>(null);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [pdfFile, setPdfFile] = useState<Blob | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [error, setError] = useState("");
   const loadRequestId = useRef(0);
@@ -65,6 +68,8 @@ export default function AdminResponses() {
     };
   }, [pdfUrl]);
 
+  useEffect(() => () => { pdfRequestId.current += 1; loadRequestId.current += 1; }, []);
+
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   const selectCategory = (next: ResultCategory) => {
@@ -87,14 +92,16 @@ export default function AdminResponses() {
 
     const requestId = ++pdfRequestId.current;
     setPdfUrl(null);
+    setPdfFile(null);
     setPdfModalOpen(true);
     setOpeningRecordId(recordId);
     setError("");
     try {
       const pdf = await getPdaResultPdf(recordId);
       if (requestId !== pdfRequestId.current) return;
-      const pdfBlob = pdf.type === "application/pdf" ? pdf : new Blob([pdf], { type: "application/pdf" });
+      const pdfBlob = pdf;
       const pdfUrl = URL.createObjectURL(pdfBlob);
+      setPdfFile(pdf);
       setPdfUrl(pdfUrl);
     } catch (err) {
       if (requestId !== pdfRequestId.current) return;
@@ -109,6 +116,7 @@ export default function AdminResponses() {
     pdfRequestId.current += 1;
     setPdfModalOpen(false);
     setPdfUrl(null);
+    setPdfFile(null);
     setOpeningRecordId(null);
   };
 
@@ -221,13 +229,8 @@ export default function AdminResponses() {
       </Card>
 
       <Modal open={pdfModalOpen} onClose={closeResultPdf} title="PDA 응답 결과 PDF" className="max-w-6xl">
-        <div className="h-[75vh] min-h-[420px] overflow-hidden rounded-xl border border-[#E2E8F0] bg-[#F8FAFC]">
-          {pdfUrl ? (
-            <iframe src={pdfUrl} title="PDA 응답 결과 PDF" className="h-full w-full border-0" />
-          ) : (
-            <div className="grid h-full place-items-center text-[14px] text-[#64748B]">PDF 결과지를 불러오는 중입니다...</div>
-          )}
-        </div>
+        {pdfUrl && <a href={pdfUrl} download="PDA-응답결과.pdf" className="mb-3 inline-block rounded border px-4 py-2">PDF 다운로드</a>}
+        {pdfFile ? <PdfPreview file={pdfFile} /> : <p role="status" className="p-5 text-center">PDF 결과지를 불러오는 중입니다.</p>}
       </Modal>
     </div>
   );
