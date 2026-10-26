@@ -33,6 +33,41 @@ VITE_USE_MOCK_API=false
 - `VITE_USE_MOCK_API=false`: 모든 관리자 데이터를 실제 API로 요청
 - Vite 개발 모드에서는 `VITE_API_BASE_URL` 요청을 같은 출처의 `/api/` 프록시로 중계합니다. `localhost`와 `127.0.0.1`의 CORS 허용 차이로 로그인이 차단되지 않도록 하며, 운영 빌드는 설정한 API 주소로 직접 요청합니다.
 - 환경변수는 브라우저 번들에 포함되므로 비밀키를 넣지 않습니다.
+- `pnpm dev`는 `.env`(git 제외)를, `pnpm build`와 Docker 빌드는 저장소의 `.env.production`(운영 API `https://api.ped-pda.com`)을 씁니다.
+
+## Docker
+
+`deploy/Dockerfile`은 Vite로 빌드한 정적 파일을 Nginx(비루트, 포트 3000)로 서빙합니다. 운영에서는 공용 Nginx(nginx_container)가 `admin.ped-pda.com` 등을 `nginx-proxy-net`의 `pda-admin:3000`으로 프록시합니다. 운영 빌드 값은 `.env.production`에 있고 빌드 시점에 번들에 포함되므로, 바꾸면 커밋·push로 다시 빌드합니다.
+
+```bash
+docker compose -f deploy/compose.development.yml up --build
+```
+
+http://127.0.0.1:18021 에서 확인합니다. 헬스체크 경로는 `/healthz`입니다.
+
+- 빌드 전에 `pnpm run typecheck`와 `pnpm run test:security`를 실행하고, 하나라도 실패하면 이미지가 만들어지지 않습니다(CodeBuild도 push하지 않음).
+- 의존성은 `pnpm-lock.yaml`로 설치합니다. `npm ci`는 Windows 전용 devDependency(`@rolldown/binding-win32-x64-msvc`) 때문에 Linux에서 EBADPLATFORM으로 실패합니다.
+- 운영 CSP는 빌드된 `index.html`의 `<meta>` 정책을 Docker 빌드 단계에서 Nginx 헤더로 옮기고 `frame-ancestors 'none'`을 더해 보냅니다. API 주소는 `.env.production`에서만 관리합니다.
+- `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`는 공용 Nginx가 붙이므로 컨테이너에서 다시 보내지 않습니다. 공용 Nginx의 `strict-origin-when-cross-origin` 대신 `index.html`의 `<meta name="referrer" content="no-referrer">`가 적용되어 리퍼러를 보내지 않습니다.
+
+## AWS 자동 배포 (CodePipeline)
+
+흐름: Git push → CodeBuild(`buildspec.yml`, 이미지를 ECR에 push) → CodeDeploy(`appspec.yml`, EC2 in-place). 사용자 프론트(PDA_USERS)·백엔드와 같은 방식입니다. EC2에서는 `deploy/compose.yml`로 web 컨테이너를 실행하고, 공용 Nginx가 `nginx-proxy-net`의 `pda-admin:3000`으로 프록시합니다. web은 호스트 `127.0.0.1:18021`에도 열려 서버 안에서 직접 확인할 수 있습니다(18020은 pda-user).
+
+| 위치 | 내용 |
+|---|---|
+| `/opt/frontend/cmc-pda-admin/` | CodeDeploy가 설치하는 배포 파일. 배포마다 교체되므로 직접 수정하지 않습니다. |
+
+`deploy/scripts/deploy.sh`는 ECR 이미지 pull → web 교체(헬스 통과까지 대기) → 이전 이미지 정리 순서로 실행하고, `validate.sh`는 web 헬스와 공용 Nginx 경유 `admin.ped-pda.com` 200을 확인합니다.
+
+서버 준비: PDA_USERS와 같은 EC2라면 docker·compose·CodeDeploy 에이전트·aws CLI v2, `nginx-proxy-net`이 이미 있습니다. 공용 Nginx의 `pda-admin.conf`(server_nginx `cmc-pda-prod-service-001` 브랜치)가 `pda-admin:3000`을 가리킵니다.
+
+콘솔 설정:
+- ECR 리포지토리 `cmc-pda/admin` (다른 이름이면 CodeBuild 환경변수 `ECR_REPOSITORY`).
+- CodeBuild: privileged mode, EC2와 같은 아키텍처, 서비스 역할에 ECR push 권한. `VITE_*` 환경변수는 넣지 않습니다(`.env.production`을 씁니다).
+- CodeDeploy: PDA_USERS와 별도 애플리케이션·배포 그룹, 같은 EC2 대상.
+- EC2 인스턴스 역할: 아티팩트 버킷 읽기 + 새 리포지토리 `cmc-pda/admin`의 ECR pull 권한.
+- 백엔드 실제 env: `CORS_ORIGINS`에 `https://admin.ped-pda.com`이 들어 있는지(백엔드 `deploy/.env.example`에는 포함), 관리자 API 허용 IP `ADMIN_ALLOWED_IPS`가 관리자 접속 위치를 허용하는지 확인합니다.
 
 ## 현재 프론트가 호출하는 API 계약 예시
 

@@ -1,0 +1,76 @@
+version: 0.2
+
+# CodeBuild project requirements:
+# - Environment: Linux standard image (Amazon Linux 2023 / standard:5.0+), privileged mode ON
+#   (needed for docker build). Build architecture must match the EC2 host (x86_64 vs arm64).
+# - Service role: ecr:GetAuthorizationToken, ECR push on the repository below,
+#   sts:GetCallerIdentity.
+# - Optional environment variable ECR_REPOSITORY overrides the default repository name.
+# Frontend build values (API URL etc.) come from .env.production in the repository, so
+# the CodeBuild project needs no VITE_* variables.
+
+env:
+  shell: bash
+
+phases:
+  pre_build:
+    commands:
+      - |
+        set -euo pipefail
+
+        REGION="${AWS_DEFAULT_REGION}"
+        ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+        REPOSITORY="${ECR_REPOSITORY:-cmc-pda/admin}"
+        REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
+        COMMIT_SHA="$(printf '%s' "${CODEBUILD_RESOLVED_SOURCE_VERSION}" | cut -c1-12)"
+        IMAGE_TAG="${COMMIT_SHA}-${CODEBUILD_BUILD_NUMBER}"
+
+        echo "Logging in to ECR..."
+        aws ecr get-login-password --region "${REGION}" \
+          | docker login --username AWS --password-stdin "${REGISTRY}"
+
+        # Persist for later phases (each phase command runs in a fresh shell).
+        echo "export IMAGE_URI=${REGISTRY}/${REPOSITORY}:${IMAGE_TAG}" > /tmp/build.env
+
+  build:
+    commands:
+      - |
+        set -euo pipefail
+        source /tmp/build.env
+
+        echo "Building Docker image ${IMAGE_URI}..."
+        # ECR Public mirrors of the official images avoid Docker Hub pull rate limits.
+        docker build \
+          --build-arg NODE_IMAGE=public.ecr.aws/docker/library/node:22-alpine \
+          --build-arg NGINX_IMAGE=public.ecr.aws/docker/library/nginx:1.30.5-alpine \
+          --file deploy/Dockerfile \
+          --tag "${IMAGE_URI}" \
+          .
+
+  post_build:
+    commands:
+      - |
+        set -euo pipefail
+        source /tmp/build.env
+
+        # post_build runs even when build fails; never push a broken build.
+        if [[ "${CODEBUILD_BUILD_SUCCEEDING}" != "1" ]]; then
+          echo "Build failed; skipping push"
+          exit 1
+        fi
+
+        echo "Pushing Docker image..."
+        docker push "${IMAGE_URI}"
+
+        echo "Creating deployment artifact..."
+        printf 'IMAGE_URI=%s\n' "${IMAGE_URI}" > deploy/image.env
+        chmod +x deploy/scripts/*.sh
+
+        echo "Build completed: ${IMAGE_URI}"
+
+artifacts:
+  files:
+    - appspec.yml
+    - deploy/compose.yml
+    - deploy/image.env
+    - deploy/scripts/*

@@ -1,0 +1,21 @@
+version: 0.0
+os: linux
+
+# Only deployment files are installed here. The image holds the static build, so there is
+# no runtime env file or data directory to preserve between revisions.
+files:
+  - source: deploy/
+    destination: /opt/frontend/cmc-pda-admin/
+
+file_exists_behavior: OVERWRITE
+
+hooks:
+  ApplicationStart:
+    - location: deploy/scripts/deploy.sh
+      timeout: 600
+      runas: root
+
+  ValidateService:
+    - location: deploy/scripts/validate.sh
+      timeout: 300
+      runas: root

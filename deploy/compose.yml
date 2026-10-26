@@ -1,0 +1,36 @@
+name: cmc-pda-admin
+
+# AWS EC2 production (CodeDeploy). Run through deploy/scripts/deploy.sh, which passes
+#   --env-file <this dir>/image.env
+# Local check of the image: compose.development.yml.
+# The image holds only static files, so there is no runtime env file or persistent data.
+
+services:
+  web:
+    image: ${IMAGE_URI:?Set IMAGE_URI in deploy/image.env}
+    restart: unless-stopped
+    # Nginx writes only its pid and temp files, kept in /tmp.
+    read_only: true
+    tmpfs:
+      - /tmp
+    # Loopback only, for checks on the host. Public traffic goes ALB -> shared Nginx ->
+    # pda-admin:3000 over nginx-proxy-net, so this port is never opened to other machines.
+    # 18020 is taken by pda-user on the same host.
+    ports:
+      - "127.0.0.1:18021:3000"
+    networks:
+      nginx-proxy-net:
+        aliases:
+          - pda-admin
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  # Shared with the Nginx container. Created once per host:
+  #   docker network create nginx-proxy-net
+  nginx-proxy-net:
+    name: nginx-proxy-net
+    external: true
