@@ -51,6 +51,31 @@ test('IL: never exposes server error or details', async () => {
 test('CS/FD: valid PDF MIME and signature accepted', async () => {
   await security.validateDownload(new Blob(['%PDF-1.7\n'], { type: 'application/pdf' }), 'pdf')
 })
+
+test('FD: result PDF download sends the record ID and bearer token and preserves binary bytes', async () => {
+  sessions.saveSession(fixture())
+  const bytes = new Uint8Array([...new TextEncoder().encode('%PDF-1.7\n'), 0, 255, 128, 10])
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, 'https://unit.example.test/staff/results/42/pdf')
+    assert.equal(options.headers.get('Accept'), 'application/pdf')
+    assert.equal(options.headers.get('Authorization'), 'Bearer header.payload.signature')
+    return new Response(new ReadableStream({ start(controller) {
+      controller.enqueue(bytes.slice(0, 7))
+      controller.enqueue(bytes.slice(7))
+      controller.close()
+    } }), { headers: { 'Content-Type': 'application/pdf' } })
+  }
+  const file = await admin.getPdaResultPdf(42)
+  assert.equal(file.type, 'application/pdf')
+  assert.deepEqual(new Uint8Array(await file.arrayBuffer()), bytes)
+})
+
+test('FD: result PDF rejects HTML error pages even when the server labels them as PDF', async () => {
+  sessions.saveSession(fixture())
+  globalThis.fetch = async () => new Response('<html>not a PDF</html>', { headers: { 'Content-Type': 'application/pdf' } })
+  await assert.rejects(admin.getPdaResultPdf(42))
+})
+
 for (const [name, body, type, kind] of [['HTML disguised as PDF', '<script>alert(1)</script>', 'application/pdf', 'pdf'], ['wrong MIME', '%PDF-1.7', 'text/html', 'pdf'], ['empty image', '', 'image/png', 'png'], ['wrong ZIP signature', 'html', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx']]) {
   test(`CS/FD: rejects ${name}`, async () => { await assert.rejects(security.validateDownload(new Blob([body], { type }), kind)) })
 }
@@ -76,6 +101,34 @@ test('IA: native sign-in requires server me confirmation', async () => {
   assert.equal(seen.length, 2); assert.equal(seen[0][1].headers.has('Authorization'), false); assert.equal(seen[1][1].headers.get('Authorization'), 'Bearer header.payload.signature')
   assert.equal(window.sessionStorage.getItem('accessToken'), null)
 })
+test('CF/IA: development login and identity verification use same-origin API routes', async () => {
+  for (const name of ['apiClient', 'auth']) {
+    let source = await readFile(join(root, `src/lib/${name}.ts`), 'utf8')
+    source = source.replaceAll('import.meta.env.VITE_API_BASE_URL', '"https://unit.example.test"').replaceAll('import.meta.env.VITE_USE_MOCK_API', '"false"').replaceAll('import.meta.env.DEV', 'true')
+    const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText
+      .replace(/from "\.\/([^".]+)"/g, 'from "./$1.mjs"')
+      .replaceAll('"./apiClient.mjs"', '"./apiClient-development.mjs"')
+    await writeFile(join(folder, `${name}-development.mjs`), output)
+  }
+  const developmentAuth = await import(new URL(`file:///${join(folder, 'auth-development.mjs').replaceAll('\\', '/')}`))
+  const requests = []
+  globalThis.fetch = async (url, options) => {
+    requests.push(url)
+    if (url === '/api/manage/sign-in') {
+      assert.equal(options.method, 'POST')
+      assert.equal(options.headers.has('Authorization'), false)
+      assert.deepEqual(JSON.parse(options.body), { loginId: 'staff@example.test', password: 'Local-Secure9!2026' })
+      return json(fixture())
+    }
+    assert.equal(url, '/api/manage/me')
+    assert.equal(options.headers.get('Authorization'), 'Bearer header.payload.signature')
+    return json({ role: 'STAFF', hospitalId: 1, mustChangePassword: false })
+  }
+  await developmentAuth.signIn('staff@example.test', 'Local-Secure9!2026')
+  assert.deepEqual(requests, ['/api/manage/sign-in', '/api/manage/me'])
+  assert.equal(sessions.restoreSession().role, 'STAFF')
+})
+
 test('IA/IN: me role mismatch rejects login and clears token', async () => {
   globalThis.fetch = async url => url.endsWith('/sign-in') ? json(fixture()) : json({ role: 'ADMIN', hospitalId: null, mustChangePassword: false })
   await assert.rejects(auth.signIn('staff@example.test', 'Local-Secure9!2026')); assert.equal(sessions.restoreSession(), null)

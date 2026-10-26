@@ -1,7 +1,9 @@
 import { requireSession, sessionGeneration } from "./session"
 import { safeApiBase, safePath } from "./security"
 
-const apiBaseUrl = safeApiBase(import.meta.env.VITE_API_BASE_URL ?? "", import.meta.env.DEV)
+const configuredApiBaseUrl = safeApiBase(import.meta.env.VITE_API_BASE_URL ?? "", import.meta.env.DEV)
+// Use the Vite proxy in development so localhost and 127.0.0.1 both work.
+const apiBaseUrl = import.meta.env.DEV && configuredApiBaseUrl ? "/api" : configuredApiBaseUrl
 const pending = new Set<AbortController>()
 const mutations = new Set<string>()
 export class ApiError extends Error {

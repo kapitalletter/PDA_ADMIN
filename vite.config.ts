@@ -16,8 +16,10 @@ export default defineConfig(({ mode, command }) => {
   const api = safeApiBase(env.VITE_API_BASE_URL ?? '', development)
   if (env.VITE_USE_MOCK_API === 'true') throw new Error('Mock authentication is disabled for this administration app.')
   const script = development ? "'self' 'unsafe-inline'" : "'self'"
+  // Vite's reconnection client creates a blob SharedWorker during development.
+  const worker = development ? "'self' blob:" : "'self'"
   const connect = ["'self'", ...(api ? [new URL(api).origin] : []), ...(development ? ['ws://localhost:*', 'ws://127.0.0.1:*'] : [])].join(' ')
-  const csp = `default-src 'none'; script-src ${script}; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src ${connect}; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
+  const csp = `default-src 'none'; script-src ${script}; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src ${connect}; worker-src ${worker}; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
   const headers = { 'Content-Security-Policy': csp, 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer', 'Permissions-Policy': 'geolocation=(), camera=(), microphone=()', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' }
   for (const content of Object.values((siteConfiguration as FigmaSiteConfiguration).customScripts ?? {})) {
     if (content) throw new Error('Arbitrary custom scripts are disabled for the administration app.')
@@ -69,6 +71,13 @@ export default defineConfig(({ mode, command }) => {
       strictPort: true,
       headers,
       cors: false,
+      proxy: development && api ? {
+        '/api/': {
+          target: api,
+          changeOrigin: true,
+          rewrite: (pathname) => pathname.slice('/api'.length),
+        },
+      } : undefined,
       hmr: { overlay: false },
       fs: { strict: true, allow: [process.cwd()], deny: ['.env', '.env.*', '*.{crt,pem,key}', '**/.git/**', '**/.figma/**', '**/tmp/**', '**/docs/**', '**/scripts/**', '**/*.private.json', '**/*.{db,sqlite,sqlite3}', '**/package*.json', '**/pnpm-lock.yaml', '**/AGENTS.md', '**/CLAUDE.md'] },
       watch: { ignored: ['**/.figma/**', '**/tmp/**', '**/docs/**'] },

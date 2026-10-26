@@ -31,6 +31,7 @@ VITE_USE_MOCK_API=false
 
 - `VITE_USE_MOCK_API=true`: 보안 개선 후 사용이 금지됩니다. 개발·운영 모두 실제 인증 API를 사용합니다.
 - `VITE_USE_MOCK_API=false`: 모든 관리자 데이터를 실제 API로 요청
+- Vite 개발 모드에서는 `VITE_API_BASE_URL` 요청을 같은 출처의 `/api/` 프록시로 중계합니다. `localhost`와 `127.0.0.1`의 CORS 허용 차이로 로그인이 차단되지 않도록 하며, 운영 빌드는 설정한 API 주소로 직접 요청합니다.
 - 환경변수는 브라우저 번들에 포함되므로 비밀키를 넣지 않습니다.
 
 ## 현재 프론트가 호출하는 API 계약 예시
