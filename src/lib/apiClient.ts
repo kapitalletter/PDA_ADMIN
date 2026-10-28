@@ -23,6 +23,23 @@ function errorMessage(status: number): string {
 export function isMockApi() { return import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API === "true" }
 export function cancelRequests() { for (const controller of pending) controller.abort() }
 
+async function discardErrorBody(response: Response) {
+  // Read small error bodies instead of cancelling a normal HTTP failure.
+  // Keep server details private and bound the amount read, just as for successful responses.
+  const reader = response.body?.getReader()
+  if (!reader) return
+  let size = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > 16 * 1024) { await reader.cancel(); break }
+    }
+  } catch { /* Preserve the original HTTP status even if its body cannot be read. */ }
+  finally { reader.releaseLock() }
+}
+
 async function request(path: string, options: RequestOptions, binary: boolean): Promise<Blob | unknown> {
   safePath(path)
   const { body, auth = true, headers: customHeaders, signal, ...init } = options
@@ -58,9 +75,12 @@ async function request(path: string, options: RequestOptions, binary: boolean): 
       signal: controller.signal, credentials: "omit", cache: "no-store", redirect: "error", referrerPolicy: "no-referrer",
     })
     if (!response.ok) {
-      await response.body?.cancel()
+      await discardErrorBody(response)
       if (response.status === 401 && auth && epoch === sessionGeneration()) window.dispatchEvent(new Event("pda:unauthorized"))
-      throw new ApiError(errorMessage(response.status), response.status)
+      const message = response.status === 401 && path === "/manage/sign-in"
+        ? "로그인에 실패했습니다. 이메일·비밀번호와 계정 활성 상태를 확인해주세요."
+        : errorMessage(response.status)
+      throw new ApiError(message, response.status)
     }
     if (auth && epoch !== sessionGeneration()) throw new ApiError("세션이 변경되었습니다. 다시 시도해주세요.", 401)
     if (response.status === 204) { if (binary) throw new ApiError("다운로드 파일이 없습니다.", 0); return undefined }

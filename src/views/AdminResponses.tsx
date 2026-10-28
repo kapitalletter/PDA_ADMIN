@@ -165,7 +165,7 @@ export default function AdminResponses() {
             <tr>
               <Th className="border-0 bg-[#F3F7F6] px-3 py-2.5 text-[12px]">고유번호(PIN)</Th>
               <Th className="border-0 bg-[#F3F7F6] px-3 py-2.5 text-[12px]">담당 의사</Th>
-              <Th className="border-0 bg-[#F3F7F6] px-3 py-2.5 text-[12px]">환자</Th>
+              <Th className="border-0 bg-[#F3F7F6] px-3 py-2.5 text-[12px]">등록번호</Th>
               <Th className="border-0 bg-[#F3F7F6] px-3 py-2.5 text-[12px]">제출일시</Th>
               <Th className="border-0 bg-[#F3F7F6] px-3 py-2.5 text-[12px]">상태</Th>
               <Th className="border-0 bg-[#F3F7F6] px-3 py-2.5 text-center text-[12px]">결과지</Th>
@@ -177,7 +177,7 @@ export default function AdminResponses() {
                 <tr key={(page - 1) * pageSize + index + 1} className="transition-colors hover:bg-[#F8FAFC]">
                   <Td className="px-3 py-3 text-[13px] font-medium text-[#0F172A]">{item.pin}</Td>
                   <Td className="px-3 py-3 text-[13px] text-[#334155]">{item.providerName ?? "—"}</Td>
-                  <Td className="px-3 py-3 text-[13px] text-[#334155]">{item.patientName ?? "—"}</Td>
+                  <Td className="px-3 py-3 text-[13px] text-[#334155]">{item.registrationNumber ?? "—"}</Td>
                   <Td className="px-3 py-3 tabular-nums text-[13px] text-[#64748B]">{formatDateTime(item.submittedAt)}</Td>
                   <Td className="px-3 py-3">
                     <span className={`inline-flex rounded-full px-2.5 py-1 text-[12px] font-medium ${item.state === "COMPLETED" ? "bg-[#DCFCE7] text-[#166534]" : "bg-[#F1F5F9] text-[#475569]"}`}>{item.state === "COMPLETED" ? "응답완료" : "미사용"}</span>

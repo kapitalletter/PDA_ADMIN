@@ -22,6 +22,14 @@ export function email(value: string): string {
   return result
 }
 
+export function contactPhone(value: string): string {
+  const normalized = value.trim().replace(/-/g, "")
+  if (!/^[0-9]{9,11}$/.test(normalized) || !/^(?:[0-9]{9,11}|0[0-9]{1,2}-[0-9]{3,4}-[0-9]{4})$/.test(value.trim())) {
+    throw new Error("연락처는 숫자 9~11자리 또는 02-0000-0000, 010-0000-0000 형식으로 입력해주세요.")
+  }
+  return normalized
+}
+
 export function passwordPolicy(value: string): string {
   const size = [...value].length
   const kinds = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((pattern) => pattern.test(value)).length

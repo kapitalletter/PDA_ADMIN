@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { grantStaffQuota, listCodeStatus, type CodeSummary, type InstitutionCodeStatus } from "../lib/adminApi"
 import { Button, Card, Field, Table, Td, Th, inputCls } from "../lib/ui"
+import { positiveInteger } from "../lib/security"
 
 function Metric({ label, value, sub, tone }: { label: string; value: number; sub: string; tone: "brand" | "slate" | "emerald" }) {
   const toneMap = {
@@ -58,9 +59,15 @@ export default function OwnerQuota() {
   const grantQuota = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (saving) return
-    const staffId = Number(targetStaffId)
-    const amount = Number(count)
-    if (!Number.isInteger(staffId) || !Number.isInteger(amount) || amount < 1 || amount > 100_000) return
+    let staffId: number
+    let amount: number
+    try {
+      staffId = positiveInteger(targetStaffId)
+      amount = positiveInteger(count, 100_000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "계정과 추가 부여 수량을 확인해주세요.")
+      return
+    }
 
     setSaving(true)
     setError("")

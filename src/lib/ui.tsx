@@ -1,4 +1,4 @@
-import React from "react"
+import React, { useId } from "react"
 
 /* ---------- Status badge ---------- */
 
@@ -65,7 +65,7 @@ export function Button({
       "text-[#9F1239] px-3 py-1.5 hover:bg-[#FFE4E6]",
   }
   return (
-    <button className={`${base} ${variants[variant]} ${className}`} {...props}>
+    <button type="button" className={`${base} ${variants[variant]} ${className}`} {...props}>
       {children}
     </button>
   )
@@ -121,24 +121,29 @@ export function Modal({
   title,
   children,
   className = "max-w-lg",
+  busy = false,
 }: {
   open: boolean
   onClose: () => void
   title: string
   children: React.ReactNode
   className?: string
+  busy?: boolean
 }) {
+  const titleId = useId()
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4">
       <div
         className="absolute inset-0 bg-[#0F172A]/40 backdrop-blur-[2px]"
-        onClick={onClose}
+        onClick={() => { if (!busy) onClose() }}
       />
-      <div className={`relative z-10 w-full rounded-2xl border border-[#E2E8F0] bg-white p-6 shadow-2xl ${className}`}>
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy} className={`relative z-10 max-h-[calc(100dvh-2rem)] w-full overflow-y-auto rounded-2xl border border-[#E2E8F0] bg-white p-6 shadow-2xl ${className}`}>
         <div className="mb-5 flex items-start justify-between">
-          <h3 className="text-[18px] font-bold text-[#0F172A]">{title}</h3>
+          <h3 id={titleId} className="text-[18px] font-bold text-[#0F172A]">{title}</h3>
           <button
+            type="button"
+            disabled={busy}
             onClick={onClose}
             className="rounded-md p-1 text-[#64748B] transition-colors hover:bg-[#F1F5F9] hover:text-[#0F172A]"
             aria-label="닫기"
@@ -152,6 +157,21 @@ export function Modal({
       </div>
     </div>
   )
+}
+
+export function FormError({ message }: { message: string }) {
+  if (!message) return null
+  return <p role="alert" className="rounded-lg border border-[#FECDD3] bg-[#FFF1F2] px-4 py-3 text-[13px] text-[#9F1239]">{message}</p>
+}
+
+export function formValidationMessage(target: EventTarget): string {
+  if (!(target instanceof HTMLInputElement)) return "입력값을 확인해주세요."
+  const label = target.labels?.[0]?.querySelector("span")?.textContent ?? "입력값"
+  if (target.validity.valueMissing) return `${label}을(를) 입력해주세요.`
+  if (target.validity.typeMismatch) return `${label} 형식을 확인해주세요.`
+  if (target.validity.patternMismatch && target.title) return target.title
+  if (target.validity.tooShort) return `${label}은(는) ${target.minLength}자 이상 입력해주세요.`
+  return `${label}을(를) 확인해주세요.`
 }
 
 /* ---------- Form field ---------- */

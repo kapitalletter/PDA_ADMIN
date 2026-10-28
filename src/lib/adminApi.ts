@@ -1,6 +1,6 @@
 import type { AccountStatus, Doctor, PalliativeAccount, PatientResponse } from "./data";
 import { requireSession } from "./session";
-import { boundedText, email, passwordPolicy, positiveInteger, validateDownload } from "./security";
+import { boundedText, contactPhone, email, passwordPolicy, positiveInteger, validateDownload } from "./security";
 import { apiRequest, apiRequestBlob, unwrapList } from "./apiClient";
 
 
@@ -165,16 +165,18 @@ export async function listHospitals({ hospitalId, search, page = 1, pageSize = 2
 }
 
 export async function createHospital(input: CreateHospitalInput) {
-  requireSession("ADMIN"); validateHospitalInput(input);
+  requireSession("ADMIN");
+  const body = validateHospitalInput(input);
 
-  const response = await apiRequest<StaffAccountResponse>("/admin/staff", { method: "POST", body: input });
+  const response = await apiRequest<StaffAccountResponse>("/admin/staff", { method: "POST", body });
   return toPalliativeAccount(response);
 }
 
 export async function updateStaffAccount(id: string | number, input: UpdateStaffInput): Promise<PalliativeAccount> {
-  requireSession("ADMIN"); positiveInteger(id); validateHospitalInput(input);
+  requireSession("ADMIN"); positiveInteger(id);
+  const body = validateHospitalInput(input);
 
-  const response = await apiRequest<StaffAccountResponse>(`/admin/staff/${encodeURIComponent(id)}`, { method: "PATCH", body: input });
+  const response = await apiRequest<StaffAccountResponse>(`/admin/staff/${encodeURIComponent(id)}`, { method: "PATCH", body });
   return toPalliativeAccount(response);
 }
 
@@ -342,11 +344,13 @@ export async function getPdaResultPdf(recordId: number): Promise<Blob> {
 }
 
 function validateHospitalInput(input: UpdateStaffInput) {
-  for (const key of ["institutionName", "name"] as const) if (input[key] !== undefined) boundedText(input[key]);
+  const body = { ...input };
+  for (const key of ["institutionName", "name"] as const) if (input[key] !== undefined) body[key] = boundedText(input[key]);
   if (input.hospitalCode !== undefined && !/^[0-9]{2}$/.test(input.hospitalCode ?? "")) throw new Error("기관 코드는 숫자 2자리입니다.");
-  if (input.contactPhone !== undefined && !/^[0-9]{9,11}$/.test(input.contactPhone ?? "")) throw new Error("연락처는 숫자 9~11자리입니다.");
-  if (input.loginId !== undefined) email(input.loginId ?? "");
+  if (input.contactPhone !== undefined) body.contactPhone = contactPhone(input.contactPhone ?? "");
+  if (input.loginId !== undefined) body.loginId = email(input.loginId ?? "");
   if (input.initialPassword !== undefined) passwordPolicy(input.initialPassword ?? "");
+  return body;
 }
 function validateDoctorInput(input: UpdateDoctorInput) {
   for (const key of ["name", "department"] as const) if (input[key] !== undefined && input[key] !== null) boundedText(input[key]);

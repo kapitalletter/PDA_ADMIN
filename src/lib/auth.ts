@@ -1,4 +1,4 @@
-import { apiRequest, cancelRequests, isMockApi } from "./apiClient"
+import { ApiError, apiRequest, cancelRequests, isMockApi } from "./apiClient"
 import { boundedText, passwordPolicy } from "./security"
 import { clearSession, requireSession, saveSession, validateSession, type SignInResponse } from "./session"
 export { clearSession, restoreSession, saveSession } from "./session"
@@ -6,7 +6,11 @@ export type { ApiRole, SignInResponse } from "./session"
 
 type StaffMe = Pick<SignInResponse, "role" | "hospitalId" | "mustChangePassword">
 async function verifyIdentity(session: SignInResponse) {
-  const me = await apiRequest<StaffMe>("/manage/me")
+  let me: StaffMe
+  try { me = await apiRequest<StaffMe>("/manage/me") } catch (error) {
+    if (error instanceof ApiError && error.status === 401) throw new Error("로그인 후 계정 인증에 실패했습니다. 다시 로그인하거나 관리자에게 문의해주세요.")
+    throw error
+  }
   if (!me || me.role !== session.role || me.hospitalId !== session.hospitalId || me.mustChangePassword !== session.mustChangePassword) {
     throw new Error("계정 권한 정보를 확인할 수 없습니다. 다시 로그인해주세요.")
   }

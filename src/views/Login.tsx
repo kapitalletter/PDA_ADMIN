@@ -54,15 +54,15 @@ export default function Login({ onLogin, message, disabled = false }: { onLogin:
 
           <div className="space-y-4">
             <Field label="이메일">
-              <input type="email" maxLength={100} className={`${inputCls} py-3 text-[16px]`} placeholder="admin@hospice.kr" value={loginId} onChange={(e) => setLoginId(e.target.value)} autoComplete="username" required />
+              <input name="loginId" type="email" maxLength={100} className={`${inputCls} py-3 text-[16px]`} placeholder="admin@hospice.kr" value={loginId} onChange={(e) => setLoginId(e.target.value)} autoComplete="username" required />
             </Field>
             <Field label="비밀번호">
-              <input type="password" minLength={8} maxLength={64} className={`${inputCls} py-3 text-[16px]`} placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
+              <input name="password" type="password" minLength={8} maxLength={64} className={`${inputCls} py-3 text-[16px]`} placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
             </Field>
           </div>
 
           {message && <p role="status" className="mt-4 text-[13px] text-[#64748B]">{message}</p>}
-          {error && <p className="mt-4 text-[13px] text-[#BE123C]">{error}</p>}
+          {error && <p role="alert" className="mt-4 text-[13px] text-[#BE123C]">{error}</p>}
 
           <Button type="submit" className="mt-7 w-full py-3.5 text-[16px]" disabled={isSubmitting || disabled}>
             {isSubmitting ? "로그인 중..." : "로그인"}

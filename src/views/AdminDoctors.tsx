@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createDoctor, downloadSignupQr, downloadUnusedCodes, getDoctorDetail, issueCodes, listDoctors, updateDoctor, type CodeBatchResult, type ProviderDetail } from "../lib/adminApi";
 import { positiveInteger } from "../lib/security";
 import type { Doctor } from "../lib/data";
-import { Badge, Button, Card, Field, Modal, Table, Td, Th, inputCls } from "../lib/ui";
+import { Badge, Button, Card, Field, FormError, Modal, Table, Td, Th, formValidationMessage, inputCls } from "../lib/ui";
 
 export default function AdminDoctors() {
   const [rows, setRows] = useState<Doctor[]>([]);
@@ -21,25 +21,33 @@ export default function AdminDoctors() {
   const [error, setError] = useState("");
   const [batchResult, setBatchResult] = useState<CodeBatchResult | null>(null);
   const [batchProviderName, setBatchProviderName] = useState("");
+  const [revision, setRevision] = useState(0);
+  const loadRequestId = useRef(0);
+  const detailRequestId = useRef(0);
 
   const loadDoctors = useCallback(async () => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
     setError("");
     try {
       const { items, total: resultTotal, pageSize: resultPageSize } = await listDoctors({ page, pageSize });
+      if (requestId !== loadRequestId.current) return;
       setRows(items);
       setTotal(resultTotal);
       setPageSize(resultPageSize);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "의사 목록을 불러오지 못했습니다.");
+      if (requestId === loadRequestId.current) setError(err instanceof Error ? err.message : "의사 목록을 불러오지 못했습니다.");
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestId.current) setLoading(false);
     }
-  }, [page, pageSize]);
+  }, [page, pageSize, revision]);
 
   useEffect(() => {
     void loadDoctors();
+    return () => { loadRequestId.current += 1; };
   }, [loadDoctors]);
+
+  useEffect(() => () => { detailRequestId.current += 1; }, []);
 
   const issuedSum = useMemo(() => rows.reduce((a, r) => a + r.issued, 0), [rows]);
   const usedSum = useMemo(() => rows.reduce((sum, doctor) => sum + doctor.used, 0), [rows]);
@@ -49,7 +57,6 @@ export default function AdminDoctors() {
     if (saving) return;
     const f = new FormData(e.currentTarget);
     const name = String(f.get("name") || "").trim();
-    if (!name) return;
     setSaving(true);
     setError("");
     try {
@@ -58,10 +65,13 @@ export default function AdminDoctors() {
         department: String(f.get("department") || "").trim(),
         email: String(f.get("email") || "").trim(),
       });
-      setRows((rs) => [...rs, created]);
+      setRows((rs) => [created, ...rs].slice(0, pageSize));
+      setTotal((count) => count + 1);
+      setPage(1);
+      setRevision((value) => value + 1);
       setOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "의사을 등록하지 못했습니다.");
+      setError(err instanceof Error ? err.message : "의사를 등록하지 못했습니다.");
     } finally {
       setSaving(false);
     }
@@ -74,7 +84,6 @@ export default function AdminDoctors() {
     const form = new FormData(e.currentTarget);
     const name = String(form.get("name") || "").trim();
     const email = String(form.get("email") || "").trim();
-    if (!name || !email) return;
     setSaving(true);
     setError("");
     try {
@@ -94,22 +103,28 @@ export default function AdminDoctors() {
   };
 
   const openDoctorDetail = async (doctorId: string) => {
+    const requestId = ++detailRequestId.current;
     setDetailOpen(true);
     setDetailDoctor(null);
     setDetailError("");
     setDetailLoading(true);
     try {
-      setDetailDoctor(await getDoctorDetail(doctorId));
+      const detail = await getDoctorDetail(doctorId);
+      if (requestId === detailRequestId.current) setDetailDoctor(detail);
     } catch (err) {
-      setDetailError(err instanceof Error ? err.message : "의사 상세 정보를 불러오지 못했습니다.");
+      if (requestId === detailRequestId.current) setDetailError(err instanceof Error ? err.message : "의사 상세 정보를 불러오지 못했습니다.");
     } finally {
-      setDetailLoading(false);
+      if (requestId === detailRequestId.current) setDetailLoading(false);
     }
   };
 
   const issueBatch = async (doctorId: string) => {
     const n = Number(issueQty[doctorId] || "");
     if (saving) return;
+    if (rows.find((doctor) => doctor.id === doctorId)?.status !== "active") {
+      setError("활성 상태의 의사에게만 고유번호를 발급할 수 있습니다.");
+      return;
+    }
     try { positiveInteger(issueQty[doctorId] || "", 100); } catch (err) { setError((err as Error).message); return; }
     const providerId = Number(doctorId);
     if (!Number.isInteger(providerId)) {
@@ -132,6 +147,7 @@ export default function AdminDoctors() {
   };
 
   const downloadUnusedExcel = async (doctorId: string) => {
+    if (saving) return;
     const providerId = Number(doctorId);
     if (!Number.isInteger(providerId)) {
       setError("의사 ID 형식이 올바르지 않습니다.");
@@ -157,6 +173,7 @@ export default function AdminDoctors() {
   };
 
   const downloadSignupQrImage = async () => {
+    if (saving) return;
     setSaving(true);
     setError("");
     try {
@@ -181,16 +198,16 @@ export default function AdminDoctors() {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-[25px] font-bold tracking-[-0.03em] text-[#0F172A]">의사 관리 &amp; 고유번호 발급</h1>
-          <p className="mt-1 text-[13px] text-[#64748B]">소속 의사을 등록하고 해당 의사에게 환자용 고유번호를 발급합니다.</p>
+          <p className="mt-1 text-[13px] text-[#64748B]">소속 의사를 등록하고 해당 의사에게 환자용 고유번호를 발급합니다.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => void downloadSignupQrImage()} disabled={saving}>
             회원가입 QR 발급
           </Button>
-          <Button onClick={() => setOpen(true)}>+ 의사 등록</Button>
+          <Button disabled={saving} onClick={() => { setError(""); setOpen(true); }}>+ 의사 등록</Button>
         </div>
       </header>
-      {error && <p role="alert" className="rounded-lg bg-[#FFF1F2] p-3 text-[13px] text-[#BE123C]">{error}</p>}
+      {!open && !editingDoctor && !batchResult && <FormError message={error} />}
 
       <div className="flex flex-wrap items-center gap-7 rounded-2xl border border-[#93C5FD] bg-[#EAF3FF] px-6 py-5">
         <div className="min-w-[210px]">
@@ -246,7 +263,7 @@ export default function AdminDoctors() {
                   <Td className="px-3 py-3">
                     <div className="flex items-center gap-1.5">
                       <input type="number" min={1} max={100} value={issueQty[r.id] ?? ""} onChange={(event) => setIssueQty((quantities) => ({ ...quantities, [r.id]: event.target.value }))} className="h-9 w-[68px] rounded-xl border border-[#CBD5E1] px-2 text-center text-[13px] outline-none focus:border-[#2563EB]" placeholder="수량" />
-                      <Button className="px-3 py-2 text-[12px]" onClick={() => void issueBatch(r.id)} disabled={saving}>
+                      <Button className="px-3 py-2 text-[12px]" onClick={() => void issueBatch(r.id)} disabled={saving || r.status !== "active"}>
                         일괄 발급
                       </Button>
                       <Button variant="outline" className="px-3 py-2 text-[12px]" onClick={() => void downloadUnusedExcel(r.id)} disabled={saving}>
@@ -255,7 +272,7 @@ export default function AdminDoctors() {
                     </div>
                   </Td>
                   <Td className="px-3 py-3">
-                    <Button variant="outline" className="px-3 py-2 text-[12px]" onClick={() => setEditingDoctor(r)} disabled={saving}>
+                    <Button variant="outline" className="px-3 py-2 text-[12px]" onClick={() => { setError(""); setEditingDoctor(r); }} disabled={saving}>
                       수정
                     </Button>
                   </Td>
@@ -266,6 +283,7 @@ export default function AdminDoctors() {
                 <Td className="py-12 text-center text-[#94A3B8]">불러오는 중...</Td>
               </tr>
             )}
+            {!loading && rows.length === 0 && <tr><Td className="py-12 text-center text-[#94A3B8]">등록된 의사가 없습니다.</Td></tr>}
           </tbody>
         </Table>
         {!loading && total > 0 && (
@@ -285,8 +303,8 @@ export default function AdminDoctors() {
         )}
       </Card>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="의사 계정 등록">
-        <form onSubmit={addDoctor} className="space-y-4">
+      <Modal open={open} busy={saving} onClose={() => setOpen(false)} title="의사 계정 등록">
+        <form onSubmit={addDoctor} onInvalidCapture={(event) => setError(formValidationMessage(event.target))} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <Field label="의사 성명">
               <input maxLength={60} name="name" className={inputCls} placeholder="예) 윤재호 교수" required autoFocus />
@@ -298,8 +316,9 @@ export default function AdminDoctors() {
           <Field label="수신 이메일" hint="환자 요약 양식이 이 주소로 자동 발송됩니다.">
             <input maxLength={60} name="email" type="email" className={inputCls} placeholder="예) doctor@hospice.kr" required />
           </Field>
+          <FormError message={error} />
           <div className="mt-2 flex justify-end gap-2 border-t border-[#F1F5F9] pt-4">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="outline" disabled={saving} onClick={() => setOpen(false)}>
               취소
             </Button>
             <Button type="submit" disabled={saving}>
@@ -309,9 +328,9 @@ export default function AdminDoctors() {
         </form>
       </Modal>
 
-      <Modal open={editingDoctor !== null} onClose={() => setEditingDoctor(null)} title="의사 정보 수정">
+      <Modal open={editingDoctor !== null} busy={saving} onClose={() => setEditingDoctor(null)} title="의사 정보 수정">
         {editingDoctor && (
-          <form onSubmit={editDoctor} className="space-y-4">
+          <form onSubmit={editDoctor} onInvalidCapture={(event) => setError(formValidationMessage(event.target))} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <Field label="의사 성명">
                 <input maxLength={60} name="name" className={inputCls} defaultValue={editingDoctor.name} required autoFocus />
@@ -329,8 +348,9 @@ export default function AdminDoctors() {
                 <option value="false">계정 정지</option>
               </select>
             </Field>
+            <FormError message={error} />
             <div className="mt-2 flex justify-end gap-2 border-t border-[#F1F5F9] pt-4">
-              <Button type="button" variant="outline" onClick={() => setEditingDoctor(null)}>
+              <Button type="button" variant="outline" disabled={saving} onClick={() => setEditingDoctor(null)}>
                 취소
               </Button>
               <Button type="submit" disabled={saving}>
@@ -341,7 +361,7 @@ export default function AdminDoctors() {
         )}
       </Modal>
 
-      <Modal open={detailOpen} onClose={() => setDetailOpen(false)} title="의사 상세 정보">
+      <Modal open={detailOpen} onClose={() => { detailRequestId.current += 1; setDetailOpen(false); }} title="의사 상세 정보">
         {detailLoading && <p className="py-8 text-center text-[14px] text-[#64748B]">불러오는 중...</p>}
         {detailError && (
           <p role="alert" className="py-8 text-center text-[14px] text-[#BE123C]">
@@ -371,7 +391,7 @@ export default function AdminDoctors() {
         )}
       </Modal>
 
-      <Modal open={batchResult !== null} onClose={() => setBatchResult(null)} title="고유번호 일괄 발급 완료">
+      <Modal open={batchResult !== null} busy={saving} onClose={() => setBatchResult(null)} title="고유번호 일괄 발급 완료">
         {batchResult && (
           <div className="space-y-4">
             <div className="rounded-xl bg-[#EFF6FF] p-4 text-[14px] leading-relaxed text-[#1E40AF]">
@@ -391,11 +411,12 @@ export default function AdminDoctors() {
                 <dd className="font-medium">{new Date(batchResult.createdAt).toLocaleString("ko-KR")}</dd>
               </div>
             </dl>
+            <FormError message={error} />
             <div className="flex justify-end gap-2">
               <button type="button" disabled={saving} onClick={() => void downloadUnusedExcel(String(batchResult.providerId))} className="inline-flex items-center justify-center rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-[14px] font-semibold text-[#0F172A] hover:bg-[#F8FAFC]">
                 미사용 PIN Excel
               </button>
-              <Button onClick={() => setBatchResult(null)}>확인</Button>
+              <Button disabled={saving} onClick={() => setBatchResult(null)}>확인</Button>
             </div>
           </div>
         )}

@@ -234,3 +234,27 @@ test('IA/IN/PV: direct common-client calls cannot bypass role or initial-passwor
 test('IA/IL: malformed token metadata rejected with controlled message', () => {
   for (const changes of [{ tokenType: 123 }, { accessToken: {} }, { accessToken: null }]) assert.throws(() => sessions.saveSession(fixture(changes)), /로그인 응답을 확인할 수 없습니다/)
 })
+
+test('PV: local and mobile phone formats normalize without accepting malformed separators', () => {
+  for (const [value, expected] of [['02-123-4567', '021234567'], ['02-1234-5678', '0212345678'], ['010-1234-5678', '01012345678'], ['0311234567', '0311234567']]) assert.equal(security.contactPhone(value), expected)
+  for (const value of ['010--12345678', '010-ABC-1234', '+82-10-1234-5678', '1234', '010 1234 5678', '010123456789']) assert.throws(() => security.contactPhone(value))
+})
+
+test('IL/BO: oversized server errors are bounded, discarded and retain the HTTP status', async () => {
+  sessions.saveSession(fixture()); let cancelled = false
+  globalThis.fetch = async () => new Response(new ReadableStream({ pull(controller) { controller.enqueue(new Uint8Array(16385)) }, cancel() { cancelled = true } }), { status: 422 })
+  await assert.rejects(client.apiRequest('/staff/providers'), { status: 422 })
+  assert.equal(cancelled, true)
+})
+
+test('PV: creating staff sends canonical contact, trimmed names and normalized email', async () => {
+  sessions.saveSession(fixture({ role: 'ADMIN', hospitalId: null }))
+  globalThis.fetch = async (url, options) => {
+    const body = JSON.parse(options.body)
+    assert.equal(body.contactPhone, '01012345678')
+    assert.equal(body.loginId, 'staff@example.test')
+    assert.equal(body.name, '담당자')
+    return json({ id: 1, hospitalName: body.institutionName, name: body.name, contactPhone: body.contactPhone, loginId: body.loginId, isActive: true })
+  }
+  await admin.createHospital({ hospitalCode: '01', institutionName: ' 병원 ', name: ' 담당자 ', contactPhone: '010-1234-5678', loginId: 'STAFF@example.test', initialPassword: 'Clinic#2026Safe' })
+})
