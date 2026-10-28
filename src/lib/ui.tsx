@@ -73,10 +73,10 @@ export function Button({
 
 /* ---------- Table primitives ---------- */
 
-export function Table({ children }: { children: React.ReactNode }) {
+export function Table({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-left">{children}</table>
+      <table className={`w-full border-collapse text-left ${className}`}>{children}</table>
     </div>
   )
 }

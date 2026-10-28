@@ -232,7 +232,16 @@ export default function AdminDoctors() {
             새로고침
           </Button> */}
         </div>
-        <Table>
+        <Table className="min-w-[1120px] table-fixed [&_th]:px-3 [&_td]:px-3">
+          <colgroup>
+            <col className="w-[160px]" />
+            <col />
+            <col className="w-[76px]" />
+            <col className="w-[76px]" />
+            <col className="w-[120px]" />
+            <col className="w-[368px]" />
+            <col className="w-[112px]" />
+          </colgroup>
           <thead>
             <tr>
               <Th className="border-0 bg-[#F3F7F6] px-3 py-2.5 text-[12px]">의사(진료과)</Th>
@@ -249,24 +258,26 @@ export default function AdminDoctors() {
               rows.map((r) => (
                 <tr key={r.id} className="transition-colors hover:bg-[#F8FAFC]">
                   <Td className="px-3 py-3 text-[13px]">
-                    <button type="button" onClick={() => void openDoctorDetail(r.id)} className="-m-2 block w-[calc(100%+1rem)] rounded-lg p-2 text-left transition-colors hover:bg-[#EFF6FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]">
-                      <div className="font-semibold text-[#0F172A] hover:text-[#2563EB]">{r.name}</div>
-                      <div className="text-[13px] text-[#64748B]">{r.department}</div>
+                    <button type="button" title={`${r.name} · ${r.department}`} onClick={() => void openDoctorDetail(r.id)} className="-m-2 block w-[calc(100%+1rem)] min-w-0 rounded-lg p-2 text-left transition-colors hover:bg-[#EFF6FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]">
+                      <div className="truncate font-semibold text-[#0F172A] hover:text-[#2563EB]">{r.name}</div>
+                      <div className="truncate text-[13px] text-[#64748B]">{r.department}</div>
                     </button>
                   </Td>
-                  <Td className="px-3 py-3 text-[13px] text-[#334155]">{r.email}</Td>
+                  <Td className="px-3 py-3 text-[13px] text-[#334155]">
+                    <span className="block truncate" title={r.email}>{r.email}</span>
+                  </Td>
                   <Td className="px-3 py-3 text-center tabular-nums">{r.issued}</Td>
                   <Td className="px-3 py-3 text-center tabular-nums text-[#166534]">{r.used}</Td>
-                  <Td className="px-3 py-3">
+                  <Td className="whitespace-nowrap px-3 py-3">
                     <Badge status={r.status} />
                   </Td>
                   <Td className="px-3 py-3">
                     <div className="flex items-center gap-1.5">
-                      <input type="number" min={1} max={100} value={issueQty[r.id] ?? ""} onChange={(event) => setIssueQty((quantities) => ({ ...quantities, [r.id]: event.target.value }))} className="h-9 w-[68px] rounded-xl border border-[#CBD5E1] px-2 text-center text-[13px] outline-none focus:border-[#2563EB]" placeholder="수량" />
-                      <Button className="px-3 py-2 text-[12px]" onClick={() => void issueBatch(r.id)} disabled={saving || r.status !== "active"}>
+                      <input type="number" min={1} max={100} value={issueQty[r.id] ?? ""} onChange={(event) => setIssueQty((quantities) => ({ ...quantities, [r.id]: event.target.value }))} className="h-9 w-[68px] shrink-0 rounded-xl border border-[#CBD5E1] px-2 text-center text-[13px] outline-none focus:border-[#2563EB]" placeholder="수량" />
+                      <Button className="shrink-0 whitespace-nowrap px-3! py-2 text-[13px]!" onClick={() => void issueBatch(r.id)} disabled={saving || r.status !== "active"}>
                         일괄 발급
                       </Button>
-                      <Button variant="outline" className="px-3 py-2 text-[12px]" onClick={() => void downloadUnusedExcel(r.id)} disabled={saving}>
+                      <Button variant="outline" className="shrink-0 whitespace-nowrap px-3! py-2 text-[13px]!" onClick={() => void downloadUnusedExcel(r.id)} disabled={saving}>
                         미사용 고유번호 다운로드
                       </Button>
                     </div>
